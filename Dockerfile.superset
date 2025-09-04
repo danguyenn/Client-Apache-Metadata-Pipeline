@@ -1,0 +1,67 @@
+# Dockerfile.superset
+# Base Superset image
+FROM apache/superset:5.0.0
+
+# ------------------------------------------------------------
+# 1) OS-level deps (needed for Prophet/cmdstan build & SSL)
+# ------------------------------------------------------------
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         build-essential \
+         gcc \
+         g++ \
+         make \
+         python3-dev \
+         libpq-dev \
+         libgomp1 \
+         ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
+
+# ------------------------------------------------------------
+# 2) Python venv
+# ------------------------------------------------------------
+RUN python3 -m venv /app/.venv
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
+
+# ------------------------------------------------------------
+# 3) Python deps
+#    - Pin numpy<2.0 to avoid Prophet build/runtime issues
+#    - Install Prophet for Superset forecasting
+#    - Include iceberg extra, psycopg2, pyhive[hive]
+#    - Install gunicorn & gevent (for the web server we exec below)
+# ------------------------------------------------------------
+RUN /app/.venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+ && /app/.venv/bin/pip install --no-cache-dir \
+      "numpy<2.0" \
+      "prophet==1.1.5" \
+      apache-superset[iceberg] \
+      psycopg2-binary \
+      "pyhive[hive]" \
+      gunicorn \
+      gevent
+
+# ------------------------------------------------------------
+# 4) Config & entrypoint
+# ------------------------------------------------------------
+COPY superset_config.py /app/pythonpath/superset_config.py
+COPY entrypoint-superset.sh /entrypoint-superset.sh
+COPY pyhive_spark_patch.py /app/pythonpath/pyhive_spark_patch.py
+
+# ------------------------------------------------------------
+# 5) Permissions
+# ------------------------------------------------------------
+RUN chmod +x /entrypoint-superset.sh \
+ && chown superset:superset \
+      /entrypoint-superset.sh \
+      /app/pythonpath/superset_config.py \
+      /app/pythonpath/pyhive_spark_patch.py
+
+USER superset
+
+# Expose default Superset port
+EXPOSE 8088
+
+ENTRYPOINT ["/entrypoint-superset.sh"]

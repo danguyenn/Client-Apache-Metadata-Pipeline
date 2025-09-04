@@ -1,0 +1,73 @@
+services:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2) Postgres for Superset metadata (unchanged)
+  # ─────────────────────────────────────────────────────────────────────────────
+  catalogtest-postgres:
+    container_name: postgres
+    image: postgres:15
+    environment:
+      POSTGRES_USER: superset
+      POSTGRES_PASSWORD: superset
+      POSTGRES_DB: superset
+    volumes:
+      - ./warehouse:/warehouse
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      default: {}
+
+  spark-thrift-server:
+    container_name: spark-thrift-server
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    volumes:
+      - ./warehouse:/warehouse
+      - ./data:/data
+      - spark_tmp:/var/lib/spark/tmp
+    environment:
+      - SPARK_CONF_DIR=/opt/spark/conf
+    ports:
+      - "10000:10000"
+    depends_on:
+      catalogtest-postgres:
+        condition: service_healthy
+    mem_limit: 10g
+    networks:
+      default: {}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4) Superset (connects to Spark Thrift)
+  # ─────────────────────────────────────────────────────────────────────────────
+  superset-iceberg:
+    build:
+      context: .
+      dockerfile: Dockerfile.superset
+    environment:
+      SUPERSET_SECRET_KEY: "uG9eC5kQm7xYvZ3Bt8S4nJ0rPqW2dR6HsT1Lb0YwX"
+      DATABASE_URL: "postgresql+psycopg2://superset:superset@postgres:5432/superset"
+      SPARK_HOST: "spark-thrift-server"
+      SPARK_PORT: "10000"
+    volumes:
+      - ./superset_config.py:/app/pythonpath/superset_config.py
+    depends_on:
+      catalogtest-postgres:
+        condition: service_healthy
+    ports:
+      - "8088:8088"
+    networks:
+      default: {}
+
+volumes:
+  pgdata:
+  spark_tmp:
+
+networks:
+  default:
+    driver: bridge

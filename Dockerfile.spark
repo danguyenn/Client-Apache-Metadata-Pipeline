@@ -1,0 +1,56 @@
+# Dockerfile.spark
+
+FROM openjdk:17-slim
+
+ENV SPARK_VERSION=3.4.1 \
+    HADOOP_VERSION=3 \
+    ICEBERG_VERSION=1.9.2 \
+    SPARK_HOME=/opt/spark
+
+USER root
+
+# 1) Install OS deps & Spark
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      procps \
+      wget \
+      maven \
+      curl \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /tmp \
+    && wget --tries=3 --retry-connrefused -O /tmp/spark.tgz \
+         https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz \
+    && tar -xzf /tmp/spark.tgz -C /opt \
+    && mv /opt/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION} $SPARK_HOME \
+    && rm /tmp/spark.tgz
+
+# 2) Download Iceberg Spark runtime + core jars into Spark’s classpath
+RUN mkdir -p $SPARK_HOME/jars \
+ && cd $SPARK_HOME/jars \
+ && wget https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.4_2.12/${ICEBERG_VERSION}/iceberg-spark-runtime-3.4_2.12-${ICEBERG_VERSION}.jar \
+ && wget https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-core/${ICEBERG_VERSION}/iceberg-core-${ICEBERG_VERSION}.jar
+
+# 2b) Vendor Caffeine + tiny transitives so we don't use --packages at runtime
+ENV CAFFEINE_VERSION=2.9.3 \
+    CHECKER_QUAL_VERSION=3.19.0 \
+    ERROR_PRONE_ANN_VERSION=2.10.0
+RUN cd $SPARK_HOME/jars \
+ && wget https://repo1.maven.org/maven2/com/github/ben-manes/caffeine/caffeine/${CAFFEINE_VERSION}/caffeine-${CAFFEINE_VERSION}.jar \
+ && wget https://repo1.maven.org/maven2/org/checkerframework/checker-qual/${CHECKER_QUAL_VERSION}/checker-qual-${CHECKER_QUAL_VERSION}.jar \
+ && wget https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations/${ERROR_PRONE_ANN_VERSION}/error_prone_annotations-${ERROR_PRONE_ANN_VERSION}.jar
+
+# 3) Copy your Iceberg-ready Spark defaults
+COPY conf/spark-defaults.conf $SPARK_HOME/conf/
+
+# 4) Build your Java metadata importer
+WORKDIR /opt/app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# 5) Copy & hook up the custom entrypoint
+COPY entrypoint-spark.sh /entrypoint-spark.sh
+RUN chmod +x /entrypoint-spark.sh
+
+EXPOSE 10000
+ENTRYPOINT ["/entrypoint-spark.sh"]
