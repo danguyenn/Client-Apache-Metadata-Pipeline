@@ -27,8 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 2) Download Iceberg Spark runtime + core jars into Spark’s classpath
 RUN mkdir -p $SPARK_HOME/jars \
  && cd $SPARK_HOME/jars \
- && wget https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.4_2.12/${ICEBERG_VERSION}/iceberg-spark-runtime-3.4_2.12-${ICEBERG_VERSION}.jar \
- && wget https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-core/${ICEBERG_VERSION}/iceberg-core-${ICEBERG_VERSION}.jar
+ && wget https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.4_2.12/${ICEBERG_VERSION}/iceberg-spark-runtime-3.4_2.12-${ICEBERG_VERSION}.jar 
 
 # 2b) Vendor Caffeine + tiny transitives so we don't use --packages at runtime
 ENV CAFFEINE_VERSION=2.9.3 \

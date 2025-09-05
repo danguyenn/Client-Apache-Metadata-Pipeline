@@ -3,7 +3,7 @@ warehouse/
 target/
 path/
 .venv/
-.venv311/
+.idea/
 data_casted/
 system_counters_data/
 uncasted_raw_data/
